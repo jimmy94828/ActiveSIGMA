@@ -1,0 +1,29 @@
+{
+  "dataset": "MP3D",
+  "method": "SemanticHeat",
+  "runversion": "run_0",
+  "tracker": "splatam",
+  "eval_dir": "eval_exploration_stage_1",
+  "results": {
+    "GdvgFV5R1Z5": {
+      "psnr": 26.1868,
+      "miou_g_curr": 75.5902
+    },
+    "gZ6f7yhEvPG": {
+      "psnr": 26.4214,
+      "miou_g_curr": 75.5878
+    },
+    "HxpKQynjfin": {
+      "psnr": 26.2242,
+      "miou_g_curr": 71.8289
+    },
+    "pLe4wQe7qrG": {
+      "psnr": 26.3250,
+      "miou_g_curr": 69.7659
+    },
+    "average": {
+      "psnr": 26.2894,
+      "miou_g_curr": 73.1932
+    }
+  }
+}

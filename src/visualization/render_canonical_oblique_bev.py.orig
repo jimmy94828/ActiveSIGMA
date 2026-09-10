@@ -1,0 +1,696 @@
+"""
+Render canonical top-down and oblique views from a reconstructed Gaussian map.
+
+The oblique view uses a fixed orthographic camera after aligning the dominant
+scene axis horizontally. RGB output includes the exploration trajectory and
+sampled 3D camera frustums. Semantic colors exactly follow the evaluation
+palette used by imgviz.label_colormap.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import os
+import typing
+
+import numpy as np
+from PIL import Image, ImageDraw
+
+
+if __package__ in (None, ""):
+    import sys
+
+    sys.path.append(os.getcwd())
+
+from src.visualization.render_rgb_sem_entro_bev import (  # noqa: E402
+    Bounds,
+    compute_bounds,
+    convert_points_to_sim,
+    eval_label_colormap,
+    gaussian_splat_features,
+    load_first_traj_pose,
+    load_npz_fields,
+    project_points_to_bev,
+    top_surface_indices,
+    visible_opacity,
+    visible_scales_px,
+)
+
+
+RGB = typing.Tuple[int, int, int]
+
+
+def rotation_z(angle_rad: float) -> np.ndarray:
+    c = math.cos(angle_rad)
+    s = math.sin(angle_rad)
+    return np.asarray(
+        [
+            [c, -s, 0.0],
+            [s, c, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=np.float32,
+    )
+
+
+def _deterministic_sample(points: np.ndarray, max_points: int) -> np.ndarray:
+    if points.shape[0] <= max_points:
+        return points
+    stride = max(1, points.shape[0] // max_points)
+    return points[::stride][:max_points]
+
+
+def estimate_canonical_transform(
+    points: np.ndarray,
+    camera_c2ws: np.ndarray,
+    labels: typing.Optional[np.ndarray] = None,
+    wall_label: int = 93,
+    max_sample_points: int = 120000,
+    angle_step_deg: float = 0.5,
+) -> typing.Tuple[np.ndarray, dict]:
+    """Align the dominant floor-plan axis to +X and place the start near -Y."""
+    if points.ndim != 2 or points.shape[1] != 3 or points.shape[0] == 0:
+        raise ValueError("points must have shape (N, 3)")
+
+    all_xy = np.asarray(points[:, :2], dtype=np.float32)
+    low, high = np.percentile(all_xy, [0.5, 99.5], axis=0)
+    center_xy = ((low + high) * 0.5).astype(np.float32)
+
+    source_xy = all_xy
+    source_name = "all_non_ceiling_points"
+    if labels is not None and labels.shape[0] == points.shape[0]:
+        wall_mask = np.asarray(labels == int(wall_label))
+        if int(np.count_nonzero(wall_mask)) >= 1000:
+            source_xy = all_xy[wall_mask]
+            source_name = f"semantic_wall_{wall_label}"
+
+    source_xy = _deterministic_sample(source_xy, max_sample_points)
+    src_low, src_high = np.percentile(source_xy, [0.5, 99.5], axis=0)
+    inlier_mask = np.all((source_xy >= src_low) & (source_xy <= src_high), axis=1)
+    source_xy = source_xy[inlier_mask] - center_xy[None]
+
+    if source_xy.shape[0] < 3:
+        angle_rad = 0.0
+    else:
+        best_area = float("inf")
+        angle_rad = 0.0
+        for angle_deg in np.arange(0.0, 90.0, float(angle_step_deg)):
+            candidate = math.radians(float(angle_deg))
+            c = math.cos(candidate)
+            s = math.sin(candidate)
+            x_rot = c * source_xy[:, 0] - s * source_xy[:, 1]
+            y_rot = s * source_xy[:, 0] + c * source_xy[:, 1]
+            width = float(x_rot.max() - x_rot.min())
+            height = float(y_rot.max() - y_rot.min())
+            area = max(width, 1e-6) * max(height, 1e-6)
+            if area < best_area:
+                best_area = area
+                angle_rad = candidate
+
+    centered_xy = all_xy - center_xy[None]
+    initial_rotation = rotation_z(angle_rad)
+    rotated_xy = (initial_rotation[:2, :2] @ centered_xy.T).T
+    rot_low, rot_high = np.percentile(rotated_xy, [0.5, 99.5], axis=0)
+    extents = rot_high - rot_low
+    if extents[1] > extents[0]:
+        angle_rad += math.pi * 0.5
+
+    rotation = rotation_z(angle_rad)
+    start_xy = camera_c2ws[0, :2, 3] - center_xy
+    start_rotated = rotation[:2, :2] @ start_xy
+    first_forward = -camera_c2ws[0, :3, 2]
+    forward_rotated = rotation @ first_forward
+
+    # Resolve the 180-degree ambiguity consistently across scenes.
+    if start_rotated[1] > 0.05 or (
+        abs(float(start_rotated[1])) <= 0.05 and forward_rotated[1] < 0.0
+    ):
+        angle_rad += math.pi
+        rotation = rotation_z(angle_rad)
+
+    transform = np.eye(4, dtype=np.float32)
+    transform[:3, :3] = rotation
+    center_world = np.asarray([center_xy[0], center_xy[1], 0.0], dtype=np.float32)
+    transform[:3, 3] = -(rotation @ center_world)
+
+    final_xy = (rotation[:2, :2] @ centered_xy.T).T
+    final_low, final_high = np.percentile(final_xy, [0.5, 99.5], axis=0)
+    metadata = {
+        "rotation_degrees": float(math.degrees(angle_rad) % 360.0),
+        "center_xy_world": [float(center_xy[0]), float(center_xy[1])],
+        "alignment_source": source_name,
+        "robust_xy_extent": [
+            float(final_high[0] - final_low[0]),
+            float(final_high[1] - final_low[1]),
+        ],
+    }
+    return transform, metadata
+
+
+def transform_points(points: np.ndarray, transform: np.ndarray) -> np.ndarray:
+    ones = np.ones((points.shape[0], 1), dtype=np.float32)
+    points_h = np.concatenate([np.asarray(points, dtype=np.float32), ones], axis=1)
+    return (transform @ points_h.T).T[:, :3].astype(np.float32)
+
+
+def transform_camera_poses(c2ws: np.ndarray, transform: np.ndarray) -> np.ndarray:
+    return np.einsum("ij,njk->nik", transform, c2ws).astype(np.float32)
+
+
+def load_world_camera_poses(params_path: str, anchor_traj_path: str) -> np.ndarray:
+    start_c2w = load_first_traj_pose(anchor_traj_path)
+    with np.load(params_path, allow_pickle=True) as data:
+        if "gt_w2c_all_frames" not in data:
+            raise ValueError("params.npz does not contain gt_w2c_all_frames")
+        w2cs = np.asarray(data["gt_w2c_all_frames"], dtype=np.float32)
+    if w2cs.ndim != 3 or w2cs.shape[1:] != (4, 4):
+        raise ValueError(f"Unexpected gt_w2c_all_frames shape: {w2cs.shape}")
+    relative_c2ws = np.linalg.inv(w2cs)
+    return np.einsum("ij,njk->nik", start_c2w, relative_c2ws).astype(np.float32)
+
+
+def project_fixed_view(
+    points: np.ndarray,
+    view_mode: str,
+    elevation_deg: float,
+    azimuth_deg: float = 0.0,
+) -> np.ndarray:
+    """Return projected (screen_x, screen_y, camera_nearness)."""
+    points = np.asarray(points, dtype=np.float32)
+    if view_mode == "topdown":
+        return points[:, [0, 1, 2]].astype(np.float32)
+    if view_mode != "oblique":
+        raise ValueError(f"Unsupported view mode: {view_mode}")
+
+    elevation = math.radians(float(elevation_deg))
+    sin_e = math.sin(elevation)
+    cos_e = math.cos(elevation)
+    azimuth = math.radians(float(azimuth_deg))
+    cos_a = math.cos(azimuth)
+    sin_a = math.sin(azimuth)
+
+    view_x = cos_a * points[:, 0] + sin_a * points[:, 1]
+    view_y = -sin_a * points[:, 0] + cos_a * points[:, 1]
+    screen_x = view_x
+    screen_y = sin_e * view_y + cos_e * points[:, 2]
+    nearness = -cos_e * view_y + sin_e * points[:, 2]
+    return np.stack([screen_x, screen_y, nearness], axis=1).astype(np.float32)
+
+
+def gaussian_splat_labels(
+    labels: np.ndarray,
+    px: np.ndarray,
+    py: np.ndarray,
+    sigma_px: np.ndarray,
+    alpha: np.ndarray,
+    bounds: Bounds,
+    palette: np.ndarray,
+    max_kernel_radius: int,
+    background: RGB = (0, 0, 0),
+) -> typing.Tuple[np.ndarray, np.ndarray]:
+    """Rasterize the strongest class per pixel without blending palette colors."""
+    _, _, _, _, width, height = bounds
+    num_pixels = int(width * height)
+    best_weight = np.zeros(num_pixels, dtype=np.float32)
+    label_image = np.full(num_pixels, -1, dtype=np.int32)
+
+    labels = np.asarray(labels, dtype=np.int32).reshape(-1)
+    base_x = np.floor(px).astype(np.int32)
+    base_y = np.floor(py).astype(np.int32)
+    radius_px = np.clip(
+        np.ceil(3.0 * sigma_px).astype(np.int32),
+        1,
+        int(max_kernel_radius),
+    )
+    inv_two_sigma_sq = 0.5 / np.maximum(sigma_px * sigma_px, 1e-8)
+
+    for dy in range(-max_kernel_radius, max_kernel_radius + 1):
+        gy = base_y + dy
+        valid_y = (gy >= 0) & (gy < height) & (abs(dy) <= radius_px)
+        if not np.any(valid_y):
+            continue
+        dy_center = (gy.astype(np.float32) + 0.5) - py
+
+        for dx in range(-max_kernel_radius, max_kernel_radius + 1):
+            gx = base_x + dx
+            valid = (
+                valid_y
+                & (gx >= 0)
+                & (gx < width)
+                & (abs(dx) <= radius_px)
+            )
+            if not np.any(valid):
+                continue
+
+            valid_idx = np.flatnonzero(valid)
+            delta_x = (gx[valid].astype(np.float32) + 0.5) - px[valid]
+            delta_y = dy_center[valid]
+            weights = alpha[valid] * np.exp(
+                -(delta_x * delta_x + delta_y * delta_y)
+                * inv_two_sigma_sq[valid]
+            )
+            target = gy[valid].astype(np.int64) * width + gx[valid].astype(np.int64)
+
+            np.maximum.at(best_weight, target, weights)
+            is_winner = weights >= (best_weight[target] - 1e-8)
+            if np.any(is_winner):
+                winning_target = target[is_winner]
+                label_image[winning_target] = labels[valid_idx[is_winner]]
+
+    image = np.empty((height * width, 3), dtype=np.uint8)
+    image[:] = np.asarray(background, dtype=np.uint8)
+    valid = label_image >= 0
+    if np.any(valid):
+        mapped = np.clip(label_image[valid], 0, palette.shape[0] - 1)
+        image[valid] = palette[mapped]
+    return np.flipud(image.reshape(height, width, 3))
+
+
+def render_projected_view(
+    points: np.ndarray,
+    colors: np.ndarray,
+    labels: np.ndarray,
+    scales: typing.Optional[np.ndarray],
+    opacities: typing.Optional[np.ndarray],
+    view_mode: str,
+    elevation_deg: float,
+    res: float,
+    pad: float,
+    min_sigma_px: float,
+    max_sigma_px: float,
+    max_kernel_radius: int,
+    palette: np.ndarray,
+) -> typing.Tuple[np.ndarray, np.ndarray, Bounds, dict]:
+    projected = project_fixed_view(points, view_mode, elevation_deg)
+    bounds = compute_bounds(projected[:, :2], res=res, pad=pad)
+    px, py, _, _, linear = project_points_to_bev(
+        projected,
+        bounds=bounds,
+        res=res,
+    )
+    chosen_idx = top_surface_indices(linear, projected[:, 2], flip=False)
+    sigma_px = visible_scales_px(
+        scales,
+        chosen_idx,
+        res=res,
+        min_sigma_px=min_sigma_px,
+        max_sigma_px=max_sigma_px,
+    )
+    alpha = visible_opacity(opacities, chosen_idx)
+
+    rgb_img = gaussian_splat_features(
+        colors[chosen_idx].astype(np.float32) / 255.0,
+        px[chosen_idx],
+        py[chosen_idx],
+        sigma_px,
+        alpha,
+        bounds,
+        max_kernel_radius=max_kernel_radius,
+        background_value=1.0,
+    )
+    rgb_img = np.clip(rgb_img * 255.0, 0, 255).astype(np.uint8)
+
+    semantic_img = gaussian_splat_labels(
+        labels=labels[chosen_idx],
+        px=px[chosen_idx],
+        py=py[chosen_idx],
+        sigma_px=sigma_px,
+        alpha=alpha,
+        bounds=bounds,
+        palette=palette,
+        max_kernel_radius=max_kernel_radius,
+    )
+    metadata = {
+        "view_mode": view_mode,
+        "bev_size": [int(bounds[5]), int(bounds[4])],
+        "visible_splats": int(chosen_idx.shape[0]),
+    }
+    return rgb_img, semantic_img, bounds, metadata
+
+
+def project_to_image_pixels(
+    points: np.ndarray,
+    view_mode: str,
+    elevation_deg: float,
+    bounds: Bounds,
+    res: float,
+) -> np.ndarray:
+    projected = project_fixed_view(points, view_mode, elevation_deg)
+    xmin, _, ymin, _, _, height = bounds
+    px = (projected[:, 0] - xmin) / res
+    py = (projected[:, 1] - ymin) / res
+    return np.stack([px, (height - 1) - py], axis=1).astype(np.float32)
+
+
+def camera_frustum_world(
+    c2w: np.ndarray,
+    intrinsics: typing.Optional[np.ndarray],
+    depth: float,
+) -> np.ndarray:
+    if intrinsics is not None:
+        fx = max(float(intrinsics[0, 0]), 1e-6)
+        fy = max(float(intrinsics[1, 1]), 1e-6)
+        cx = max(float(intrinsics[0, 2]), 1.0)
+        cy = max(float(intrinsics[1, 2]), 1.0)
+        half_width = depth * cx / fx
+        half_height = depth * cy / fy
+    else:
+        half_width = depth * 0.55
+        half_height = depth * 0.40
+
+    local = np.asarray(
+        [
+            [0.0, 0.0, 0.0],
+            [-half_width, -half_height, -depth],
+            [half_width, -half_height, -depth],
+            [half_width, half_height, -depth],
+            [-half_width, half_height, -depth],
+        ],
+        dtype=np.float32,
+    )
+    return (c2w[:3, :3] @ local.T).T + c2w[:3, 3][None]
+
+
+def draw_trajectory_and_cameras(
+    image: np.ndarray,
+    camera_c2ws: np.ndarray,
+    intrinsics: typing.Optional[np.ndarray],
+    view_mode: str,
+    elevation_deg: float,
+    bounds: Bounds,
+    res: float,
+    pose_stride: int,
+    frustum_depth: float,
+    trajectory_width: int,
+    frustum_width: int,
+) -> typing.Tuple[np.ndarray, int]:
+    base = Image.fromarray(image).convert("RGBA")
+    overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+
+    centers = camera_c2ws[:, :3, 3]
+    path_px = project_to_image_pixels(
+        centers,
+        view_mode=view_mode,
+        elevation_deg=elevation_deg,
+        bounds=bounds,
+        res=res,
+    )
+    path_tuples = [tuple(np.rint(point).astype(int)) for point in path_px]
+    if len(path_tuples) >= 2:
+        draw.line(
+            path_tuples,
+            fill=(255, 126, 0, 225),
+            width=max(1, int(trajectory_width)),
+            joint="curve",
+        )
+
+    stride = max(1, int(pose_stride))
+    pose_indices = list(range(0, camera_c2ws.shape[0], stride))
+    if pose_indices[-1] != camera_c2ws.shape[0] - 1:
+        pose_indices.append(camera_c2ws.shape[0] - 1)
+
+    frustum_edges = [
+        (0, 1),
+        (0, 2),
+        (0, 3),
+        (0, 4),
+        (1, 2),
+        (2, 3),
+        (3, 4),
+        (4, 1),
+    ]
+    for pose_idx in pose_indices:
+        frustum = camera_frustum_world(
+            camera_c2ws[pose_idx],
+            intrinsics=intrinsics,
+            depth=float(frustum_depth),
+        )
+        frustum_px = project_to_image_pixels(
+            frustum,
+            view_mode=view_mode,
+            elevation_deg=elevation_deg,
+            bounds=bounds,
+            res=res,
+        )
+        frustum_tuples = [
+            tuple(np.rint(point).astype(int))
+            for point in frustum_px
+        ]
+        for start_idx, end_idx in frustum_edges:
+            draw.line(
+                [frustum_tuples[start_idx], frustum_tuples[end_idx]],
+                fill=(0, 205, 255, 205),
+                width=max(1, int(frustum_width)),
+            )
+        origin_x, origin_y = frustum_tuples[0]
+        draw.ellipse(
+            (origin_x - 1, origin_y - 1, origin_x + 1, origin_y + 1),
+            fill=(0, 255, 255, 230),
+        )
+
+    marker_radius = max(3, int(trajectory_width) + 2)
+    if path_tuples:
+        start_x, start_y = path_tuples[0]
+        end_x, end_y = path_tuples[-1]
+        draw.ellipse(
+            (
+                start_x - marker_radius,
+                start_y - marker_radius,
+                start_x + marker_radius,
+                start_y + marker_radius,
+            ),
+            fill=(30, 90, 255, 255),
+            outline=(255, 255, 255, 255),
+        )
+        draw.ellipse(
+            (
+                end_x - marker_radius,
+                end_y - marker_radius,
+                end_x + marker_radius,
+                end_y + marker_radius,
+            ),
+            fill=(240, 45, 45, 255),
+            outline=(255, 255, 255, 255),
+        )
+
+    return np.asarray(Image.alpha_composite(base, overlay).convert("RGB")), len(pose_indices)
+
+
+def fit_to_square_canvas(
+    image: np.ndarray,
+    canvas_size: int,
+    nearest: bool,
+    margin_ratio: float = 0.04,
+) -> np.ndarray:
+    image_pil = Image.fromarray(image)
+    margin = max(1, int(round(canvas_size * margin_ratio)))
+    available = max(1, canvas_size - 2 * margin)
+    scale = min(available / image_pil.width, available / image_pil.height)
+    new_size = (
+        max(1, int(round(image_pil.width * scale))),
+        max(1, int(round(image_pil.height * scale))),
+    )
+    resampling = Image.Resampling.NEAREST if nearest else Image.Resampling.LANCZOS
+    resized = image_pil.resize(new_size, resampling)
+    canvas = Image.new("RGB", (canvas_size, canvas_size), (255, 255, 255))
+    offset = (
+        (canvas_size - resized.width) // 2,
+        (canvas_size - resized.height) // 2,
+    )
+    canvas.paste(resized, offset)
+    return np.asarray(canvas, dtype=np.uint8)
+
+
+def save_png(path: str, image: np.ndarray) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    Image.fromarray(image).save(path, format="PNG", optimize=True)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Render aligned top-down and fixed-angle oblique BEV views with "
+            "evaluation semantic colors."
+        )
+    )
+    parser.add_argument("--npz", required=True, help="final params.npz")
+    parser.add_argument("--traj", required=True, help="dataset traj.txt anchor")
+    parser.add_argument("--scene", required=True, help="scene name")
+    parser.add_argument("--out-dir", required=True, help="output directory")
+    parser.add_argument("--dataset", default="Replica", help="dataset name")
+    parser.add_argument("--res", type=float, default=0.015, help="meters per pixel")
+    parser.add_argument("--pad", type=float, default=0.06, help="view padding ratio")
+    parser.add_argument("--elevation", type=float, default=60.0, help="oblique view elevation in degrees")
+    parser.add_argument("--ceiling-label", type=int, default=31, help="semantic ceiling class removed for cutaway view")
+    parser.add_argument("--wall-label", type=int, default=93, help="semantic wall class used for axis alignment")
+    parser.add_argument("--num-classes", type=int, default=102, help="number of evaluation semantic classes")
+    parser.add_argument("--pose-stride", type=int, default=10, help="draw one camera frustum every N poses")
+    parser.add_argument("--frustum-depth", type=float, default=0.18, help="camera frustum depth in meters")
+    parser.add_argument("--trajectory-width", type=int, default=2, help="trajectory width in render pixels")
+    parser.add_argument("--frustum-width", type=int, default=1, help="frustum width in render pixels")
+    parser.add_argument("--canvas-size", type=int, default=2400, help="square output size in pixels")
+    parser.add_argument("--min-sigma-px", type=float, default=0.75)
+    parser.add_argument("--max-sigma-px", type=float, default=3.0)
+    parser.add_argument("--max-kernel-radius", type=int, default=4)
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    fields = load_npz_fields(args.npz)
+    camera_c2ws = load_world_camera_poses(args.npz, args.traj)
+
+    points_world = convert_points_to_sim(
+        fields["points"],
+        dataset=args.dataset,
+        coord_system="sim",
+        traj_path=args.traj,
+    )
+    colors = fields["colors"]
+    labels = fields["labels"]
+    if colors is None:
+        raise ValueError("RGB colors are missing from params.npz")
+    if labels is None:
+        raise ValueError("Semantic labels are missing from params.npz")
+
+    keep = labels != int(args.ceiling_label)
+    if not np.any(keep):
+        raise ValueError("No points remain after removing the ceiling class")
+
+    points_world = points_world[keep]
+    colors = colors[keep]
+    labels = labels[keep]
+    scales = fields["scales"]
+    if scales is not None:
+        scales = scales[keep]
+    opacities = fields["opacities"]
+    if opacities is not None:
+        opacities = opacities[keep]
+
+    canonical_transform, alignment_metadata = estimate_canonical_transform(
+        points_world,
+        camera_c2ws,
+        labels=labels,
+        wall_label=args.wall_label,
+    )
+    points_canonical = transform_points(points_world, canonical_transform)
+    cameras_canonical = transform_camera_poses(camera_c2ws, canonical_transform)
+
+    palette = eval_label_colormap(args.num_classes)
+    oblique_rgb, oblique_semantic, oblique_bounds, oblique_metadata = render_projected_view(
+        points=points_canonical,
+        colors=colors,
+        labels=labels,
+        scales=scales,
+        opacities=opacities,
+        view_mode="oblique",
+        elevation_deg=args.elevation,
+        res=args.res,
+        pad=args.pad,
+        min_sigma_px=args.min_sigma_px,
+        max_sigma_px=args.max_sigma_px,
+        max_kernel_radius=args.max_kernel_radius,
+        palette=palette,
+    )
+    oblique_rgb_trajectory, num_frustums = draw_trajectory_and_cameras(
+        image=oblique_rgb,
+        camera_c2ws=cameras_canonical,
+        intrinsics=fields["intrinsics"],
+        view_mode="oblique",
+        elevation_deg=args.elevation,
+        bounds=oblique_bounds,
+        res=args.res,
+        pose_stride=args.pose_stride,
+        frustum_depth=args.frustum_depth,
+        trajectory_width=args.trajectory_width,
+        frustum_width=args.frustum_width,
+    )
+
+    _, topdown_semantic, _, topdown_metadata = render_projected_view(
+        points=points_canonical,
+        colors=colors,
+        labels=labels,
+        scales=scales,
+        opacities=opacities,
+        view_mode="topdown",
+        elevation_deg=90.0,
+        res=args.res,
+        pad=args.pad,
+        min_sigma_px=args.min_sigma_px,
+        max_sigma_px=args.max_sigma_px,
+        max_kernel_radius=args.max_kernel_radius,
+        palette=palette,
+    )
+
+    oblique_rgb_trajectory = fit_to_square_canvas(
+        oblique_rgb_trajectory,
+        canvas_size=args.canvas_size,
+        nearest=False,
+    )
+    oblique_semantic = fit_to_square_canvas(
+        oblique_semantic,
+        canvas_size=args.canvas_size,
+        nearest=True,
+    )
+    topdown_semantic = fit_to_square_canvas(
+        topdown_semantic,
+        canvas_size=args.canvas_size,
+        nearest=True,
+    )
+
+    rgb_path = os.path.join(args.out_dir, "bev_rgb_trajectory_oblique.png")
+    semantic_oblique_path = os.path.join(args.out_dir, "bev_semantic_oblique.png")
+    semantic_topdown_path = os.path.join(args.out_dir, "bev_semantic_topdown.png")
+    metadata_path = os.path.join(args.out_dir, "bev_metadata.json")
+
+    save_png(rgb_path, oblique_rgb_trajectory)
+    save_png(semantic_oblique_path, oblique_semantic)
+    save_png(semantic_topdown_path, topdown_semantic)
+
+    metadata = {
+        "scene": args.scene,
+        "input_npz": args.npz,
+        "trajectory_anchor": args.traj,
+        "coordinate_system": "canonical Replica world",
+        "alignment": alignment_metadata,
+        "oblique": {
+            **oblique_metadata,
+            "elevation_degrees": float(args.elevation),
+        },
+        "topdown": topdown_metadata,
+        "camera_poses_total": int(camera_c2ws.shape[0]),
+        "camera_frustums_drawn": int(num_frustums),
+        "camera_pose_stride": int(args.pose_stride),
+        "ceiling_label_removed": int(args.ceiling_label),
+        "semantic_palette": f"imgviz.label_colormap({args.num_classes})",
+        "semantic_interpolation": "nearest",
+        "canvas_size": [int(args.canvas_size), int(args.canvas_size)],
+        "outputs": {
+            "rgb_trajectory_oblique": rgb_path,
+            "semantic_oblique": semantic_oblique_path,
+            "semantic_topdown": semantic_topdown_path,
+        },
+    }
+    os.makedirs(args.out_dir, exist_ok=True)
+    with open(metadata_path, "w", encoding="utf-8") as file:
+        json.dump(metadata, file, indent=2)
+
+    print(f"Scene              : {args.scene}")
+    print(f"Input npz          : {args.npz}")
+    print(f"Canonical rotation : {alignment_metadata['rotation_degrees']:.2f} deg")
+    print(f"Alignment source   : {alignment_metadata['alignment_source']}")
+    print(f"Oblique elevation  : {args.elevation:.2f} deg")
+    print(f"Camera poses       : {camera_c2ws.shape[0]}")
+    print(f"Camera frustums    : {num_frustums}")
+    print(f"Semantic palette   : imgviz.label_colormap({args.num_classes})")
+    print(f"Saved RGB          : {rgb_path}")
+    print(f"Saved Semantic     : {semantic_oblique_path}")
+    print(f"Saved Top-down     : {semantic_topdown_path}")
+    print(f"Saved Metadata     : {metadata_path}")
+
+
+if __name__ == "__main__":
+    main()

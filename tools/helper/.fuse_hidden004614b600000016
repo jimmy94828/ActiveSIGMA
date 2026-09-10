@@ -1,0 +1,119 @@
+#!/bin/bash
+##################################################
+### This script runs the full NARUTO system
+### (active planning and active ray sampling)
+### on the MP3D dataset.
+##################################################
+
+# Input arguments
+scene=${1:-GdvgFV5R1Z5}
+num_run=${2:-1}
+EXP=${3:-ActiveSem} # can be EXP name or explicit config file path
+ENABLE_VIS=${4:-0}
+GPU_ID=${5:-0}
+
+# export CUDA_VISIBLE_DEVICES=${GPU_ID}
+export CUDA_VISIBLE_DEVICES=1,0
+export DISPLAY=${DISPLAY:-:1}
+export XAUTHORITY=${XAUTHORITY:-/home/phudh/.Xauthority}
+export PYTHONNOUSERSITE=1
+export PYTHONPATH=
+if [ -f /lib/x86_64-linux-gnu/libGLdispatch.so.0 ]; then
+    export LD_PRELOAD=/lib/x86_64-linux-gnu/libGLdispatch.so.0
+fi
+
+# Resolve project root from script location so the command works from any cwd.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DATASET=MP3D
+
+if [ "$EXP" == "ActiveSem" ]; then
+  PROJ_DIR="/media/phudh/X9_Pro/undergraduate/ActiveSGM"
+  RESULT_DIR=/media/phudh/HDD/ActiveSGM_result/results
+else
+  PROJ_DIR="/media/phudh/X9_Pro/undergraduate/ActiveMapping"  
+  RESULT_DIR="/media/phudh/HDD/Active_mapping_results_MP3D"
+fi
+
+cd "${PROJ_DIR}"
+##################################################
+### Random Seed
+###     also used to initialize agent pose 
+###     from indexing the pose in MP3D SLAM
+###     trajectory.
+##################################################
+seeds=(0 500 1000 1500 1999)
+seeds=("${seeds[@]:0:$num_run}")
+
+##################################################
+### Scenes
+###     choose one or all of the scenes
+##################################################
+# scenes=(room0 room1 room2 office0 office1 office2 office3 office4)
+scenes=( GdvgFV5R1Z5 gZ6f7yhEvPG HxpKQynjfin pLe4wQe7qrG )
+# Check if the input argument is 'all'
+if [ "$scene" == "all" ]; then
+  selected_scenes=${scenes[@]} # Copy all scenes
+else
+  selected_scenes=($scene) # Assign the matching scene
+fi
+##################################################
+### Main
+###     Run for selected scenes for N trials
+##################################################
+
+if [ "$EXP" == "ActiveSem" ]; then
+  method=("ActiveSGM")
+else
+  method=("ActiveMapping")
+fi
+
+for scene in $selected_scenes
+do
+  for i in "${!seeds[@]}"; do
+    seed=${seeds[$i]}
+    echo "Running scene=${scene}, run=${i}, seed=${seed} with EXP=${EXP}"
+    CFG=/media/phudh/X9_Pro/undergraduate/ActiveMapping/configs/${DATASET}/${scene}/${EXP}.py
+    EXP_NAME=${EXP}
+
+    if [ ! -f "${CFG}" ]; then
+        echo "[ERROR] Config file not found: ${CFG}"
+        exit 1
+    fi
+
+    TRAJ_BASE="/media/phudh/HDD/trajectory_generate/keyboard_trajectories/MP3D/${scene}/test"
+
+    ### create result folder ###
+    # result_dir=${RESULT_DIR}/${DATASET}/$scene/${EXP_NAME}/run_${i}
+    # mkdir -p ${result_dir}
+
+    ### run experiment ###
+    # python src/main/activesgm.py --cfg ${CFG} --seed ${seed} --result_dir ${result_dir} --enable_vis ${ENABLE_VIS}
+    # run_status=$?
+    # if [ ${run_status} -ne 0 ]; then
+    #     echo "[ERROR] ActiveSGM run failed for scene=${scene}, run=${i}. Skip evaluation."
+    #     exit ${run_status}
+    # fi
+
+    ### 3D Reconstruction evaluation ###
+    GT_MESH=$PROJ_DIR/data/MP3D/v1/scans/${scene}/mesh.obj
+    result_dir=${RESULT_DIR}/${DATASET}/$scene/${EXP_NAME}/run_${i}
+
+    # python src/evaluation/eval_splatam_recon_v2.py \
+    # --ckpt ${result_dir}/splatam/exploration_stage_0/params.npz \
+    # --gt_mesh ${GT_MESH} \
+    # --transform_traj ${TRAJ_BASE}/${scene}/traj.txt \
+    # --result_dir ${result_dir}/eval_3d/exploration_stage_0
+    python /media/phudh/X9_Pro/undergraduate/${method}/src/evaluation/eval_splatam_recon_v2.py \
+    --ckpt ${result_dir}/splatam/exploration_stage_1/params.npz \
+    --gt_mesh ${GT_MESH} \
+    --transform_traj ${TRAJ_BASE}/traj.txt \
+    --result_dir ${result_dir}/eval_traj
+
+    # python src/evaluation/eval_splatam_recon_v2.py \
+    # --ckpt ${result_dir}/splatam/final/params.npz \
+    # --gt_mesh ${GT_MESH} \
+    # --transform_traj ${TRAJ_BASE}/${scene}/traj.txt \
+    # --result_dir ${result_dir}/eval_3d/final
+
+  done
+done

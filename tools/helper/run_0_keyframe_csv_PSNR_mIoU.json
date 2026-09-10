@@ -1,0 +1,91 @@
+{
+  "dataset": "Replica",
+  "runversion": "run_0_keyframe",
+  "source_csv": [
+    "results/eval_compare_Replica_office0_run_0_keyframe.csv",
+    "results/eval_compare_Replica_office1_run_0_keyframe.csv",
+    "results/eval_compare_Replica_office2_run_0_keyframe.csv",
+    "results/eval_compare_Replica_office3_run_0_keyframe.csv",
+    "results/eval_compare_Replica_office4_run_0_keyframe.csv",
+    "results/eval_compare_Replica_room0_run_0_keyframe.csv",
+    "results/eval_compare_Replica_room1_run_0_keyframe.csv"
+  ],
+  "metrics": [
+    "psnr",
+    "miou_g_curr"
+  ],
+  "methods": {
+    "ActiveMapping": {
+      "results": {
+        "office0": {
+          "psnr": 32.0445,
+          "miou_g_curr": 82.5267
+        },
+        "office1": {
+          "psnr": 35.0561,
+          "miou_g_curr": 83.7539
+        },
+        "office2": {
+          "psnr": 26.2141,
+          "miou_g_curr": 82.9114
+        },
+        "office3": {
+          "psnr": 26.3264,
+          "miou_g_curr": 85.3713
+        },
+        "office4": {
+          "psnr": 26.8730,
+          "miou_g_curr": 81.9548
+        },
+        "room0": {
+          "psnr": 25.8156,
+          "miou_g_curr": 84.4376
+        },
+        "room1": {
+          "psnr": 28.0953,
+          "miou_g_curr": 82.0793
+        },
+        "average": {
+          "psnr": 28.6321,
+          "miou_g_curr": 83.2907
+        }
+      }
+    },
+    "ActiveSGM": {
+      "results": {
+        "office0": {
+          "psnr": 32.6137,
+          "miou_g_curr": 82.2977
+        },
+        "office1": {
+          "psnr": 34.5656,
+          "miou_g_curr": 84.8222
+        },
+        "office2": {
+          "psnr": 25.2695,
+          "miou_g_curr": 81.3273
+        },
+        "office3": {
+          "psnr": 25.5430,
+          "miou_g_curr": 85.2560
+        },
+        "office4": {
+          "psnr": 27.1769,
+          "miou_g_curr": 82.6681
+        },
+        "room0": {
+          "psnr": 25.4148,
+          "miou_g_curr": 81.2434
+        },
+        "room1": {
+          "psnr": 26.7073,
+          "miou_g_curr": 81.7951
+        },
+        "average": {
+          "psnr": 28.1844,
+          "miou_g_curr": 82.7728
+        }
+      }
+    }
+  }
+}

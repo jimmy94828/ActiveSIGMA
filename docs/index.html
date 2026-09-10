@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="ActiveSIGMA uses cross-view semantic inconsistency to guide active 3D Gaussian mapping. IROS 2026 Workshop on SeMaNa."
+    />
+    <meta name="theme-color" content="#f7f8fb" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="ActiveSIGMA: Semantic Inconsistency-Guided Active Mapping" />
+    <meta
+      property="og:description"
+      content="A hybrid Gaussian–voxel framework that turns cross-view semantic inconsistency into directional exploration heat."
+    />
+    <meta property="og:url" content="https://jimmy94828.github.io/ActiveSIGMA/" />
+    <meta property="og:image" content="https://jimmy94828.github.io/ActiveSIGMA/assets/images/method/method_overview.webp" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="canonical" href="https://jimmy94828.github.io/ActiveSIGMA/" />
+    <title>ActiveSIGMA · Semantic Inconsistency-Guided Active Mapping</title>
+    <link rel="stylesheet" href="./css/style.css" />
+    <script src="./js/main.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+
+    <main id="main-content">
+      <section class="hero" id="top">
+        <div class="container">
+          <p class="eyebrow">IROS 2026 Workshop · SeMaNa</p>
+          <h1>ActiveSIGMA</h1>
+          <p class="subtitle">Semantic Inconsistency-Guided Active Mapping</p>
+
+          <p class="authors">
+            <span>Wei-Chen Hsu<sup>*</sup></span>,
+            <span>Zheng-Xu Cai<sup>*</sup></span>,
+            <span>Yen-Ku Yeh</span>,
+            <span>Ching-Chun Huang</span>
+          </p>
+          <p class="affiliation">National Yang Ming Chiao Tung University, Taiwan</p>
+          <p class="equal-note"><sup>*</sup> Equal contribution</p>
+
+          <div class="resource-links" aria-label="Project resources">
+            <a class="button" href="./files/activesigma-paper.pdf">
+              <svg class="button-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M6.75 3.75h7.5l3 3v13.5H6.75zM14.25 3.75v3h3M9 11.25h6M9 14.25h6M9 17.25h4.5" /></svg>
+              Paper
+            </a>
+            <a class="button" href="./files/activesigma-supplementary.pdf">
+              <svg class="button-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m4.5 7.5 7.5-3 7.5 3-7.5 3zM4.5 12l7.5 3 7.5-3M4.5 16.5l7.5 3 7.5-3" /></svg>
+              Supplementary
+            </a>
+            <a class="button" href="./files/activesigma-poster.pdf">
+              <svg class="button-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M4.5 4.5h15v12h-15zM8.25 19.5h7.5M12 16.5v3M7.5 8.25h3v3h-3zM12.75 8.25h3.75M12.75 11.25h3.75" /></svg>
+              Poster
+            </a>
+            <a class="button" href="https://github.com/jimmy94828/ActiveSIGMA">
+              <svg class="button-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m8.25 7.5-4.5 4.5 4.5 4.5M15.75 7.5l4.5 4.5-4.5 4.5M13.5 5.25l-3 13.5" /></svg>
+              Code
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section id="abstract">
+        <div class="container">
+          <div class="section-heading">
+            <h2>Abstract</h2>
+          </div>
+          <p class="section-copy">
+            Autonomous robots operating in unknown environments require exploration to construct maps with accurate geometry and reliable semantic understanding. Existing methods mainly select viewpoints according to geometric coverage, photometric quality, or semantic uncertainty, but do not explicitly address cross-view semantic inconsistency. ActiveSIGMA introduces a hybrid Gaussian–voxel representation: the Gaussian map supports dense reconstruction and rendering, while the voxel map stores direction-conditioned semantic evidence. The framework converts inconsistencies across viewpoints into directional exploration heat, prioritizing semantically inconsistent and insufficiently observed regions during candidate generation and next-best-view selection. Experiments on Replica and Matterport3D demonstrate improved semantic mapping accuracy and more consistent predictions across novel viewpoints.
+          </p>
+
+          <h3 class="contribution-heading">Contributions</h3>
+          <div class="idea-grid" aria-label="Main contributions">
+            <article class="idea-card">
+              <span class="idea-number">01</span>
+              <h3>Inconsistency-aware exploration</h3>
+              <p>ActiveSIGMA explicitly identifies and revisits regions with cross-view semantic inconsistency during exploration.</p>
+            </article>
+            <article class="idea-card">
+              <span class="idea-number">02</span>
+              <h3>Hybrid Gaussian–voxel map</h3>
+              <p>The representation supports dense reconstruction and rendering while preserving direction-conditioned semantic distributions and accumulated evidence.</p>
+            </article>
+            <article class="idea-card">
+              <span class="idea-number">03</span>
+              <h3>Directional exploration heat</h3>
+              <p>The proposed heat guides candidate generation and NBV scoring toward semantically inconsistent and under-observed voxel–direction pairs.</p>
+            </article>
+            <article class="idea-card">
+              <span class="idea-number">04</span>
+              <h3>Consistent semantic mapping</h3>
+              <p>Experiments on Replica and MP3D show improved semantic mapping, comparable reconstruction quality, and more consistent novel-view predictions.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="method">
+        <div class="container">
+          <div class="section-heading">
+            <h2>Method</h2>
+          </div>
+          <p class="section-copy">
+            ActiveSIGMA processes each posed RGB-D frame with OneFormer and jointly updates a hybrid map composed of a semantic 3D Gaussian map and an exploration-oriented voxel map. The Gaussian map represents geometry, appearance, opacity, and semantic attributes for dense RGB-D and semantic rendering, while the voxel map stores occupancy and reliability-weighted Dirichlet semantic evidence in HEALPix viewing-direction bins. For every voxel–direction pair, ActiveSIGMA compares its semantic distribution with adjacent observed directions using Jensen–Shannon divergence, then modulates this inconsistency by accumulated evidence and free-space feasibility to obtain directional exploration heat. The planner combines geometric candidates sampled from newly discovered reachable free space with semantic refinement candidates generated from high-value voxel–direction pairs. Each candidate view is evaluated by rendering the Gaussian map and balancing semantic inconsistency gain, semantic uncertainty gain, geometric exploration gain, and travel cost; the highest-scoring view is then executed using an RRT-based path planner.
+          </p>
+          <figure class="figure-shell">
+            <a href="./assets/images/method/method_overview.webp" target="_blank" rel="noreferrer">
+              <img
+                src="./assets/images/method/method_overview.webp"
+                alt="ActiveSIGMA pipeline, from observation and hybrid mapping to candidate viewpoint sampling and next-best-view selection"
+                width="3067"
+                height="1581"
+              />
+            </a>
+            <figcaption>
+              Overview of the proposed ActiveSIGMA pipeline. Posed RGB-D observations and semantic predictions update a hybrid map consisting of a semantic 3D Gaussian map for dense reconstruction and an exploration voxel map for storing direction-conditioned semantic evidence. The accumulated evidence is converted into exploration values for semantic refinement candidate generation and next-best-view selection.
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section id="results">
+        <div class="container">
+          <div class="section-heading">
+            <h2>Results</h2>
+          </div>
+          <p class="section-copy">
+            ActiveSIGMA improves average semantic mapping performance on Replica and MP3D while maintaining comparable photometric and geometric reconstruction quality.
+          </p>
+
+          <div class="metrics" aria-label="ActiveSIGMA average results">
+            <article class="metric-card">
+              <header>
+                <h3>Replica</h3>
+                <p>8 scenes · 768 avg. steps</p>
+              </header>
+              <div class="metric-values">
+                <div><strong>30.83</strong><span>PSNR ↑</span></div>
+                <div><strong>84.86</strong><span>mIoU % ↑</span></div>
+                <div><strong>94.33</strong><span>mAP % ↑</span></div>
+              </div>
+            </article>
+            <article class="metric-card">
+              <header>
+                <h3>Matterport3D</h3>
+                <p>4 scenes · 2,007 avg. steps</p>
+              </header>
+              <div class="metric-values">
+                <div><strong>26.80</strong><span>PSNR ↑</span></div>
+                <div><strong>74.69</strong><span>mIoU % ↑</span></div>
+                <div><strong>86.88</strong><span>mAP % ↑</span></div>
+              </div>
+            </article>
+          </div>
+
+          <div class="result-stack">
+            <figure class="figure-shell">
+              <a href="./assets/images/results/Replica_BEV_RGB_semantic.webp" target="_blank" rel="noreferrer">
+                <img
+                  src="./assets/images/results/Replica_BEV_RGB_semantic.webp"
+                  alt="Bird's-eye RGB and semantic reconstruction results on Replica scenes"
+                  width="3286"
+                  height="2794"
+                  loading="lazy"
+                />
+              </a>
+              <figcaption>Replica: bird’s-eye RGB reconstructions and semantic maps.</figcaption>
+            </figure>
+            <figure class="figure-shell">
+              <a href="./assets/images/results/MP3D_BEV_RGB_semantic.webp" target="_blank" rel="noreferrer">
+                <img
+                  src="./assets/images/results/MP3D_BEV_RGB_semantic.webp"
+                  alt="Bird's-eye RGB and semantic reconstruction results on Matterport3D scenes"
+                  width="4065"
+                  height="1827"
+                  loading="lazy"
+                />
+              </a>
+              <figcaption>Matterport3D: bird’s-eye RGB reconstructions and semantic maps.</figcaption>
+            </figure>
+            <figure class="figure-shell">
+              <a href="./assets/images/results/exploration_trajectory.webp" target="_blank" rel="noreferrer">
+                <img
+                  src="./assets/images/results/exploration_trajectory.webp"
+                  alt="Exploration trajectories over reconstructed Replica and Matterport3D scenes"
+                  width="3226"
+                  height="2560"
+                  loading="lazy"
+                />
+              </a>
+              <figcaption>Exploration trajectories produced while actively refining the maps.</figcaption>
+            </figure>
+          </div>
+
+          <div class="comparison-grid">
+            <figure class="figure-shell">
+              <a href="./assets/images/results/office1_qualitative_comparison.webp" target="_blank" rel="noreferrer">
+                <img
+                  src="./assets/images/results/office1_qualitative_comparison.webp"
+                  alt="Multi-view semantic prediction comparison on Replica Office1"
+                  width="4642"
+                  height="2512"
+                  loading="lazy"
+                />
+              </a>
+              <figcaption>Replica Office1: novel-view semantic consistency.</figcaption>
+            </figure>
+            <figure class="figure-shell">
+              <a href="./assets/images/results/room2_qualitative_comparison.webp" target="_blank" rel="noreferrer">
+                <img
+                  src="./assets/images/results/room2_qualitative_comparison.webp"
+                  alt="Multi-view semantic prediction comparison on Replica Room2"
+                  width="4642"
+                  height="2512"
+                  loading="lazy"
+                />
+              </a>
+              <figcaption>Replica Room2: novel-view semantic consistency.</figcaption>
+            </figure>
+            <figure class="figure-shell">
+              <a href="./assets/images/results/Replica_qualitative_comparison.webp" target="_blank" rel="noreferrer">
+                <img
+                  src="./assets/images/results/Replica_qualitative_comparison.webp"
+                  alt="Highlighted qualitative semantic comparison on Replica"
+                  loading="lazy"
+                />
+              </a>
+              <figcaption>Replica: ActiveSIGMA reduces conflicting predictions in highlighted regions.</figcaption>
+            </figure>
+            <figure class="figure-shell">
+              <a href="./assets/images/results/MP3D_qualitative_comparison.webp" target="_blank" rel="noreferrer">
+                <img
+                  src="./assets/images/results/MP3D_qualitative_comparison.webp"
+                  alt="Highlighted qualitative semantic comparison on Matterport3D"
+                  loading="lazy"
+                />
+              </a>
+              <figcaption>Matterport3D: more stable semantics across nearby viewpoints.</figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section id="poster">
+        <div class="container poster-layout">
+          <a class="poster-preview" href="./files/activesigma-poster.pdf" aria-label="Open the ActiveSIGMA poster PDF">
+            <img
+              src="./assets/images/activesigma-poster.webp"
+              alt="ActiveSIGMA IROS 2026 workshop poster"
+              loading="lazy"
+            />
+          </a>
+          <div class="poster-copy">
+            <h2>Poster</h2>
+            <p class="lede">
+              Download the workshop poster for a compact overview of the motivation, hybrid-map design, directional exploration heat, viewpoint sampling, and experimental results.
+            </p>
+            <a class="button" href="./files/activesigma-poster.pdf">
+              <svg class="button-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M4.5 4.5h15v12h-15zM8.25 19.5h7.5M12 16.5v3M7.5 8.25h3v3h-3zM12.75 8.25h3.75M12.75 11.25h3.75" /></svg>
+              Download poster
+            </a>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-inner">
+        <p>© <span data-current-year>2026</span> ActiveSIGMA authors.</p>
+      </div>
+    </footer>
+  </body>
+</html>

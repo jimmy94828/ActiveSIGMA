@@ -1,6 +1,33 @@
 # ActiveSIGMA: Semantic Inconsistency-Guided Active Mapping
 
+<p align="center">
+  <a href="https://jimmy94828.github.io/ActiveSIGMA/"><strong>Project Page</strong></a> ·
+  <a href="https://jimmy94828.github.io/ActiveSIGMA/files/activesigma-paper.pdf">Paper</a> ·
+  <a href="https://jimmy94828.github.io/ActiveSIGMA/files/activesigma-supplementary.pdf">Supplementary</a> ·
+  <a href="https://jimmy94828.github.io/ActiveSIGMA/files/activesigma-poster.pdf">Poster</a>
+</p>
+
+> IROS 2026 Workshop on SeMaNa
+
 This repository is an implementation of ActiveSIGMA: Semantic Inconsistency-Guided Active Mapping, derived from the ActiveSGM codebase with a SplaTAM-based semantic Gaussian mapping backend. The main planner is `src/planner/semantic_heat_planner.py` and the main entry point is `src/main/activesgm.py`.
+
+<p align="center">
+  <a href="https://jimmy94828.github.io/ActiveSIGMA/">
+    <img src="docs/assets/images/method/method_overview.webp" alt="ActiveSIGMA method overview" width="900">
+  </a>
+</p>
+
+ActiveSIGMA preserves direction-conditioned semantic evidence in a hybrid Gaussian–voxel map, converts cross-view inconsistency into directional exploration heat, and uses it to guide candidate generation and next-best-view selection.
+
+## Project page
+
+The static project page is located in [`docs/`](docs/) and includes the paper, supplementary material, poster, method overview, and qualitative results. To preview it locally:
+
+```bash
+python -m http.server 8000 --directory docs
+```
+
+Then open <http://localhost:8000>. For GitHub Pages, configure the publishing source as the `main` branch and `/docs` directory.
 
 This repository is intended for Linux research workstations with an NVIDIA GPU; datasets, pretrained models, and generated results are not included.
 
@@ -22,10 +49,10 @@ The dependency versions are old research versions. Newer Python, PyTorch, CUDA, 
 
 ## 2. Clone the repository
 
-Clone with submodules. Replace the placeholder URL with the URL of the GitHub repository:
+Clone the repository with its submodules:
 
 ```bash
-git clone --recursive <YOUR_GITHUB_REPOSITORY_URL> ActiveSIGMA
+git clone --recursive https://github.com/jimmy94828/ActiveSIGMA.git
 cd ActiveSIGMA
 ```
 
@@ -253,6 +280,19 @@ Then make `semantic_device` consistent with the visible device numbering in the 
 ### Config or data file not found
 
 Run commands from the repository root, verify the scene name, and check that the corresponding dataset and generated NVS directories exist. Do not use the old machine-specific symlinks from the original development environment.
+
+## Citation
+
+If you find ActiveSIGMA useful in your research, please cite:
+
+```bibtex
+@inproceedings{hsu2026activesigma,
+  title={ActiveSIGMA: Semantic Inconsistency-Guided Active Mapping},
+  author={Hsu, Wei-Chen and Cai, Zheng-Xu and Yeh, Yen-Ku and Huang, Ching-Chun},
+  booktitle={IROS 2026 Workshop on SeMaNa},
+  year={2026}
+}
+```
 
 ## Acknowledgement
 

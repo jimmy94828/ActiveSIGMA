@@ -284,7 +284,8 @@ If you find ActiveSIGMA useful in your research, please cite:
 
 ## Acknowledgement
 
-ActiveSIGMA is derived from and substantially builds on ActiveSGM. Please acknowledge and cite the original ActiveSGM work when using this repository:
+ActiveSIGMA builds upon the ActiveSGM framework. We thank the authors
+for releasing their work and refer readers to the original paper:
 
 ```bibtex
 @inproceedings{chen2025understanding,

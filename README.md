@@ -9,7 +9,7 @@
 
 > IROS 2026 Workshop — [SeMaNa: Semantic-Aware Mapping and Navigation — Towards Cognitive and Adaptive Robots](https://federicorollo.github.io/SeMaNa-Workshop/)
 
-This repository is an implementation of ActiveSIGMA: Semantic Inconsistency-Guided Active Mapping, derived from the ActiveSGM codebase with a SplaTAM-based semantic Gaussian mapping backend. The main planner is `src/planner/semantic_heat_planner.py` and the main entry point is `src/main/activesgm.py`.
+This repository is an implementation of ActiveSIGMA: Semantic Inconsistency-Guided Active Mapping, derived from the ActiveSGM codebase with a SplaTAM-based semantic Gaussian mapping backend. The main planner is `src/planner/semantic_heat_planner.py` and the main entry point is `src/main/activesigma.py`.
 
 <p align="center">
   <a href="https://jimmy94828.github.io/ActiveSIGMA/">
@@ -200,14 +200,14 @@ SCENE NUM_RUN EXP ENABLE_VIS GPU_IDS
 
 ```bash
 conda activate ActiveSIGMA
-bash scripts/activesgm/run_replica.sh office0 1 SemanticHeat 0 0,1
+bash scripts/activesigma/run_replica.sh office0 1 SemanticHeat 0 0,1
 ```
 
 ### MP3D example
 
 ```bash
 conda activate ActiveSIGMA
-bash scripts/activesgm/run_mp3d.sh GdvgFV5R1Z5 1 SemanticHeat 0 0,1
+bash scripts/activesigma/run_mp3d.sh GdvgFV5R1Z5 1 SemanticHeat 0 0,1
 ```
 
 Set `ENABLE_VIS=0` on a headless server. For a visual run, configure `DISPLAY` and, when needed, `XAUTHORITY` for the local X server.
@@ -216,7 +216,7 @@ The default output directory is `results/`. Redirect it without editing the scri
 
 ```bash
 RESULT_ROOT=/absolute/path/to/results \
-  bash scripts/activesgm/run_replica.sh office0 1 SemanticHeat 0 0,1
+  bash scripts/activesigma/run_replica.sh office0 1 SemanticHeat 0 0,1
 ```
 
 The runner creates results in the following form:

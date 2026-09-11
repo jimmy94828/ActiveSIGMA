@@ -90,7 +90,7 @@ if __name__ == "__main__":
     visualizer = init_visualizer(main_cfg, info_printer)
 
     ##################################################
-    ### Run ActiveLang
+    ### Run ActiveSIGMA
     ##################################################
     ## load initial pose and convert from RUB to RDF (splatam)) ##
     c2w_slam = planner.load_init_pose() # RUB

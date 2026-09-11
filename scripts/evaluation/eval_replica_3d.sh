@@ -54,7 +54,7 @@ do
 
         ### run experiment ###
         CFG=configs/${DATASET}/${scene}/${EXP}.py
-#       python src/main/activesgm.py --cfg ${CFG} --seed ${seed} --result_dir ${result_dir} --enable_vis ${ENABLE_VIS}
+#       python src/main/activesigma.py --cfg ${CFG} --seed ${seed} --result_dir ${result_dir} --enable_vis ${ENABLE_VIS}
 
         ### 3D Reconstruction evaluation ###
         DASHSCENE=${scene: 0: 0-1}_${scene: 0-1}

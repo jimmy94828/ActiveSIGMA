@@ -7,7 +7,7 @@
   <a href="https://jimmy94828.github.io/ActiveSIGMA/files/activesigma-poster.pdf">Poster</a>
 </p>
 
-> IROS 2026 Workshop on SeMaNa
+> IROS 2026 Workshop — [SeMaNa: Semantic-Aware Mapping and Navigation — Towards Cognitive and Adaptive Robots](https://federicorollo.github.io/SeMaNa-Workshop/)
 
 This repository is an implementation of ActiveSIGMA: Semantic Inconsistency-Guided Active Mapping, derived from the ActiveSGM codebase with a SplaTAM-based semantic Gaussian mapping backend. The main planner is `src/planner/semantic_heat_planner.py` and the main entry point is `src/main/activesgm.py`.
 
@@ -18,18 +18,6 @@ This repository is an implementation of ActiveSIGMA: Semantic Inconsistency-Guid
 </p>
 
 ActiveSIGMA preserves direction-conditioned semantic evidence in a hybrid Gaussian–voxel map, converts cross-view inconsistency into directional exploration heat, and uses it to guide candidate generation and next-best-view selection.
-
-## Project page
-
-The static project page is located in [`docs/`](docs/) and includes the paper, supplementary material, poster, method overview, and qualitative results. To preview it locally:
-
-```bash
-python -m http.server 8000 --directory docs
-```
-
-Then open <http://localhost:8000>. For GitHub Pages, configure the publishing source as the `main` branch and `/docs` directory.
-
-This repository is intended for Linux research workstations with an NVIDIA GPU; datasets, pretrained models, and generated results are not included.
 
 ## 1. Requirements
 
@@ -198,7 +186,7 @@ SemanticHeat uses these Hugging Face checkpoints. Transformers downloads them on
 
 The machine must be able to access Hugging Face. For an offline setup, download the checkpoints first and replace the checkpoint names in the selected configuration files with local paths.
 
-## 8. Run SemanticHeat
+## 8. Run ActiveSIGMA
 
 Activate the environment and run from the repository root or call the runner with its path. The runners resolve the project root from their own location.
 
@@ -289,7 +277,7 @@ If you find ActiveSIGMA useful in your research, please cite:
 @inproceedings{hsu2026activesigma,
   title={ActiveSIGMA: Semantic Inconsistency-Guided Active Mapping},
   author={Hsu, Wei-Chen and Cai, Zheng-Xu and Yeh, Yen-Ku and Huang, Ching-Chun},
-  booktitle={IROS 2026 Workshop on SeMaNa},
+  booktitle={IROS 2026 Workshop on Semantic-Aware Mapping and Navigation (SeMaNa): Towards Cognitive and Adaptive Robots},
   year={2026}
 }
 ```

@@ -109,6 +109,17 @@ img {
   text-transform: uppercase;
 }
 
+.eyebrow a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.eyebrow a:hover,
+.eyebrow a:focus-visible {
+  color: var(--blue);
+  text-decoration: underline;
+}
+
 h1,
 h2,
 h3,
@@ -241,6 +252,13 @@ h3 {
   color: var(--muted);
   font-size: clamp(1.03rem, 1.8vw, 1.16rem);
   line-height: 1.85;
+}
+
+.acknowledgement-copy {
+  max-width: 900px;
+  margin: 0 auto;
+  color: var(--muted);
+  text-align: center;
 }
 
 .contribution-heading {

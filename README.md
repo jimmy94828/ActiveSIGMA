@@ -269,7 +269,7 @@ Then make `semantic_device` consistent with the visible device numbering in the 
 
 Run commands from the repository root, verify the scene name, and check that the corresponding dataset and generated NVS directories exist. Do not use the old machine-specific symlinks from the original development environment.
 
-## Citation
+<!-- ## Citation
 
 If you find ActiveSIGMA useful in your research, please cite:
 
@@ -280,7 +280,7 @@ If you find ActiveSIGMA useful in your research, please cite:
   booktitle={IROS 2026 Workshop on Semantic-Aware Mapping and Navigation (SeMaNa): Towards Cognitive and Adaptive Robots},
   year={2026}
 }
-```
+``` -->
 
 ## Acknowledgement
 

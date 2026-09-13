@@ -11,6 +11,11 @@ __pycache__/
 logs/
 tmp/
 results*/
+
+# Keep qualitative and quantitative figures used by the public project page.
+!/docs/assets/images/results/
+!/docs/assets/images/results/**
+
 build_output.txt
 *.log
 
